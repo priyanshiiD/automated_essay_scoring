@@ -1,7 +1,6 @@
 import pickle
 import re
 import streamlit as st
-import numpy as np
 from nltk.corpus import stopwords
 from nltk.tokenize import sent_tokenize
 from scipy.sparse import hstack
@@ -35,11 +34,9 @@ scaler = pickle.load(open("scaler.pkl", "rb"))
 # SAMPLE ESSAYS
 # ================================
 SAMPLE_ESSAYS = {
-    "School Uniforms": "School uniforms should be required in all public schools because they help students focus on learning instead of fashion. When everyone wears the same clothes, social pressure is reduced.",
-    
-    "Online Learning": "Online learning has made education more flexible and accessible. Students can learn at their own pace and access resources anytime, but it also creates challenges like distractions.",
-    
-    "Social Media Impact": "Social media has both positive and negative effects. It helps people connect but can also lead to distraction and mental health issues if overused."
+    "School Uniforms": "School uniforms should be required because they reduce distractions and improve discipline among students.",
+    "Online Learning": "Online learning provides flexibility but also introduces challenges like lack of interaction and distractions.",
+    "Social Media Impact": "Social media connects people but can negatively affect mental health if overused."
 }
 
 # ================================
@@ -55,11 +52,10 @@ def clean_text(text):
 # ================================
 # FEATURE EXTRACTION
 # ================================
-def get_essay_stats(text):
+def get_stats(text):
     word_count = len(text.split())
     sentence_count = len(sent_tokenize(text)) if text.strip() else 0
     avg_sentence_length = word_count / max(sentence_count, 1)
-
     return word_count, sentence_count, avg_sentence_length
 
 # ================================
@@ -68,7 +64,7 @@ def get_essay_stats(text):
 def predict(text):
     cleaned = clean_text(text)
 
-    word_count, sentence_count, avg_sentence_length = get_essay_stats(text)
+    word_count, sentence_count, avg_sentence_length = get_stats(text)
 
     struct = [[word_count, sentence_count, avg_sentence_length]]
     struct_scaled = scaler.transform(struct)
@@ -82,73 +78,74 @@ def predict(text):
     return score, word_count, sentence_count, avg_sentence_length
 
 # ================================
-# FEEDBACK FUNCTION (FIXED)
+# FEEDBACK FUNCTION
 # ================================
 def get_feedback(score):
     if score < 2.5:
-        return "Needs Improvement", "Try improving clarity, grammar, and structure."
+        return "Needs Improvement", "Improve clarity, grammar, and structure."
     elif score < 4:
-        return "Average", "Good attempt. Add stronger arguments and examples."
+        return "Average", "Good effort. Add stronger arguments."
     else:
-        return "Strong", "Well-structured essay with good clarity."
+        return "Strong", "Well-structured and clear essay."
 
 # ================================
 # UI
 # ================================
 st.title("📝 Automated Essay Scoring System")
-
-st.write("This system predicts essay scores using machine learning based on writing patterns and structure.")
+st.write("Score Range: 1 (Low) to 6 (High)")
 
 # Sidebar
 st.sidebar.header("About")
-st.sidebar.write("Model trained on ASAP dataset")
+st.sidebar.write("Model trained using ASAP dataset")
 st.sidebar.write("Uses TF-IDF + structural features")
 
 # Sample selection
-sample_choice = st.selectbox(
-    "Try a sample essay",
-    ["None"] + list(SAMPLE_ESSAYS.keys())
-)
+sample = st.selectbox("Try sample essay", ["None"] + list(SAMPLE_ESSAYS.keys()))
 
 if st.button("Load Sample"):
-    if sample_choice != "None":
-        st.session_state["essay"] = SAMPLE_ESSAYS[sample_choice]
+    if sample != "None":
+        st.session_state["essay"] = SAMPLE_ESSAYS[sample]
 
-# Text input
-essay = st.text_area(
-    "Enter your essay",
-    height=250,
-    key="essay"
-)
+# Input
+essay = st.text_area("Enter your essay", height=250, key="essay")
 
-# Show live stats
+# Live stats
 if essay.strip():
-    wc, sc, avg_len = get_essay_stats(essay)
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Words", wc)
-    col2.metric("Sentences", sc)
-    col3.metric("Avg Sentence Length", round(avg_len, 1))
+    wc, sc, avg = get_stats(essay)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Words", wc)
+    c2.metric("Sentences", sc)
+    c3.metric("Avg Length", round(avg, 1))
 
-# Predict button
+# Prediction
 if st.button("Predict Score"):
 
     if essay.strip() == "":
         st.warning("Please enter an essay.")
     else:
         with st.spinner("Analyzing essay..."):
-            score, wc, sc, avg_len = predict(essay)
 
-        # Optional scaling for demo (can remove if you want)
-        adjusted_score = min(6, max(1, score * 1.3))
+            score, wc, sc, avg = predict(essay)
 
-        quality, feedback = get_feedback(adjusted_score)
+            # ================================
+            # SCORE SCALING (IMPORTANT FIX)
+            # ================================
+            min_model_score = 1.0
+            max_model_score = 3.0
 
-        st.success(f"Predicted Score: {round(adjusted_score, 2)}")
+            adjusted_score = 1 + (score - min_model_score) * (5 / (max_model_score - min_model_score))
+            adjusted_score = max(1, min(6, adjusted_score))
+
+            quality, feedback = get_feedback(adjusted_score)
+
+        # Output
+        st.write(f"Raw Score: {round(score,2)}")
+        st.success(f"Final Score: {round(adjusted_score,2)}")
         st.info(f"Quality: {quality}")
-
         st.write("**Feedback:**", feedback)
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Words", wc)
-        col2.metric("Sentences", sc)
-        col3.metric("Avg Sentence Length", round(avg_len, 1))
+        # Stats again
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Words", wc)
+        c2.metric("Sentences", sc)
+        c3.metric("Avg Length", round(avg, 1))
